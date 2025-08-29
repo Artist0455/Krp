@@ -1,19 +1,15 @@
 from flask import Flask
-import threading
-import main  # <-- yaha tumhara bot ka code import hoga
+import threading, os
 
 app = Flask(__name__)
 
-@app.route("/")
+@app.route('/')
 def home():
-    return "🎶 Artist Music Bot is Alive on Render!"
+    return "Artist Music Bot is running!"
 
-def run_bot():
-    main.run_bot()  # is function ko main.py me define karenge
+def run():
+    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
 
 if __name__ == "__main__":
-    # Thread me bot start karo
-    threading.Thread(target=run_bot).start()
-    # Web server start karo
-    app.run(host="0.0.0.0", port=10000)
+    threading.Thread(target=run).start()
     
