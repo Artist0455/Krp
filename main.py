@@ -1,87 +1,117 @@
-# FILE: main.py
+import os
 import asyncio
-import logging
-from pyrogram import Client, filters, idle
-from config import BOT_TOKEN, API_ID, API_HASH, OWNER_ID, ARTIST_CHECK_CHAT
-from handlers import (
-    start_handler,
-    play_handler,
-    pause_handler,
-    resume_handler,
-    nowplaying_handler,
-    seek_handler,
-    set_player
-)
-from player import Player
+from pyrogram import Client, filters
+from pyrogram.types import Message
+from pytgcalls import PyTgCalls, idle
+from pytgcalls.types import InputStream, AudioPiped
+import yt_dlp
+from datetime import datetime
 
-logging.basicConfig(level=logging.INFO)
+# Environment variables
+API_ID = int(os.getenv("API_ID"))
+API_HASH = os.getenv("API_HASH")
+BOT_TOKEN = os.getenv("BOT_TOKEN")
+STRING_SESSION = os.getenv("STRING_SESSION")
+OWNER_ID = int(os.getenv("OWNER_ID", "0"))
 
-app = Client(
-    "artist-music-bot",
-    bot_token=BOT_TOKEN,
-    api_id=API_ID,
-    api_hash=API_HASH
-)
+# Pyrogram Clients
+bot = Client("ArtistBot", api_id=API_ID, api_hash=API_HASH, bot_token=BOT_TOKEN)
+user = Client("ArtistUser", api_id=API_ID, api_hash=API_HASH, session_string=STRING_SESSION)
 
-# ===================== COMMAND HANDLERS =====================
+# PyTgCalls
+pytgcalls = PyTgCalls(user)
 
-@app.on_message(filters.command("start"))
-async def _start(client, message):
-    await start_handler(client, message)
+# In-memory queues
+queues = {}
 
-@app.on_message(filters.command("play"))
-async def _play(client, message):
-    await play_handler(client, message)
+# Helper: download from yt-dlp
+def yt_download(url):
+    ydl_opts = {
+        "format": "bestaudio/best",
+        "outtmpl": "downloads/%(id)s.%(ext)s",
+        "quiet": True
+    }
+    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+        info = ydl.extract_info(url, download=True)
+        return info["title"], info["duration"], ydl.prepare_filename(info)
 
-@app.on_message(filters.command("pause"))
-async def _pause(client, message):
-    await pause_handler(client, message)
+# Commands
+@bot.on_message(filters.command("start"))
+async def start(_, m: Message):
+    await m.reply_text("✨ **Welcome to Artist Music Bot** 🎶\n\nUse /play <song name or link> to stream music!")
 
-@app.on_message(filters.command("resume"))
-async def _resume(client, message):
-    await resume_handler(client, message)
+@bot.on_message(filters.command("play"))
+async def play(_, m: Message):
+    if len(m.command) < 2:
+        return await m.reply("❌ Please provide a song name or YouTube URL.")
+    query = " ".join(m.command[1:])
+    await m.reply("🔎 Searching...")
+    title, duration, filename = yt_download(query)
 
-@app.on_message(filters.command("nowplaying"))
-async def _nowplaying(client, message):
-    await nowplaying_handler(client, message)
+    chat_id = m.chat.id
+    if chat_id not in queues:
+        queues[chat_id] = []
+    queues[chat_id].append((title, filename))
 
-@app.on_message(filters.command("seek"))
-async def _seek(client, message):
-    await seek_handler(client, message)
+    if not pytgcalls.active_calls.get(chat_id):
+        await pytgcalls.join_group_call(
+            chat_id,
+            InputStream(
+                AudioPiped(filename)
+            )
+        )
+        await m.reply_photo(
+            "https://i.ibb.co/YRgt0ZT/music.jpg",
+            caption=f"🎶 **Artist Music Streaming**\n\n▶️ Now Playing: **{title}**\n🕒 Duration: {duration} sec\n📌 Requested by: {m.from_user.mention}"
+        )
+    else:
+        await m.reply(f"➕ Added to queue: **{title}**")
 
-# ===================== BACKGROUND TASK =====================
+@bot.on_message(filters.command("skip"))
+async def skip(_, m: Message):
+    chat_id = m.chat.id
+    if chat_id in queues and queues[chat_id]:
+        queues[chat_id].pop(0)
+        if queues[chat_id]:
+            title, filename = queues[chat_id][0]
+            await pytgcalls.change_stream(
+                chat_id,
+                InputStream(AudioPiped(filename))
+            )
+            await m.reply(f"⏭ Skipped! Now playing: **{title}**")
+        else:
+            await pytgcalls.leave_group_call(chat_id)
+            await m.reply("✅ Queue empty, left VC.")
+    else:
+        await m.reply("❌ No songs in queue.")
 
-async def artist_check_task(client: Client):
+@bot.on_message(filters.command("pause"))
+async def pause(_, m: Message):
+    await pytgcalls.pause_stream(m.chat.id)
+    await m.reply("⏸ Paused!")
+
+@bot.on_message(filters.command("resume"))
+async def resume(_, m: Message):
+    await pytgcalls.resume_stream(m.chat.id)
+    await m.reply("▶️ Resumed!")
+
+# Auto Artist Check every 1 min
+async def artist_check():
     while True:
-        try:
-            target = ARTIST_CHECK_CHAT or OWNER_ID
-            await client.send_message(target, "Artist check successful ✨")
-        except Exception as e:
-            logging.warning("Artist check failed: %s", e)
         await asyncio.sleep(60)
-
-# ===================== MAIN =====================
+        try:
+            await bot.send_message(OWNER_ID, "✅ Artist check successful ✨")
+        except:
+            pass
 
 async def main():
-    await app.start()
-    pl = Player(app)
-    await pl.start()
-    await set_player(pl)
-
-    asyncio.create_task(artist_check_task(app))
-
-    print("✅ Bot started. Press Ctrl+C to stop.")
-    try:
-        await idle()
-    finally:
-        await app.stop()
+    await bot.start()
+    await user.start()
+    await pytgcalls.start()
+    asyncio.create_task(artist_check())
+    print("✅ Artist Music Bot Started")
+    await idle()
 
 if __name__ == "__main__":
     asyncio.run(main())
     
-import asyncio
-
-# --- Tumhara bot ka pura code yaha hoga ---
-
-def run_bot():
-    asyncio.run(main())  # jo tumhara main function hoga usko run karega
