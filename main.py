@@ -79,3 +79,9 @@ async def main():
 if __name__ == "__main__":
     asyncio.run(main())
     
+import asyncio
+
+# --- Tumhara bot ka pura code yaha hoga ---
+
+def run_bot():
+    asyncio.run(main())  # jo tumhara main function hoga usko run karega
