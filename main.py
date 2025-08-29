@@ -2,7 +2,8 @@
 import asyncio
 import logging
 from pyrogram import Client, filters, idle
-from config import BOT_TOKEN, API_ID, API_HASH, OWNER_ID, ARTIST_CHECK_CHAT
+from pymongo import MongoClient
+from config import BOT_TOKEN, API_ID, API_HASH, OWNER_ID, ARTIST_CHECK_CHAT, LOG_CHAT
 from handlers import (
     start_handler,
     play_handler,
@@ -16,6 +17,13 @@ from player import Player
 
 logging.basicConfig(level=logging.INFO)
 
+# ===================== DATABASE =====================
+MONGO_URI = "your_mongodb_connection_string"  # <-- Render env var me set karna
+mongo = MongoClient(MONGO_URI)
+db = mongo["artist_music"]
+users_col = db["users"]
+
+# ===================== BOT APP =====================
 app = Client(
     "artist-music-bot",
     bot_token=BOT_TOKEN,
@@ -27,7 +35,18 @@ app = Client(
 
 @app.on_message(filters.command("start"))
 async def _start(client, message):
-    await start_handler(client, message)
+    # user ko DB me save karna
+    user_id = message.from_user.id
+    users_col.update_one({"_id": user_id}, {"$set": {"name": message.from_user.first_name}}, upsert=True)
+
+    # Start animation (GIF ya sticker send karna)
+    try:
+        await message.reply_animation(
+            animation="https://files.catbox.moe/lhbsqt.mp4",
+            caption=f"👋 Welcome **{message.from_user.first_name}** to **Artist Music Bot** 🎶\n\nType /help to see all commands."
+        )
+    except:
+        await start_handler(client, message)
 
 @app.on_message(filters.command("play"))
 async def _play(client, message):
@@ -54,7 +73,7 @@ async def _seek(client, message):
 async def artist_check_task(client: Client):
     while True:
         try:
-            target = ARTIST_CHECK_CHAT or OWNER_ID
+            target = ARTIST_CHECK_CHAT or OWNER_ID or LOG_CHAT
             await client.send_message(target, "Artist check successful ✨")
         except Exception as e:
             logging.warning("Artist check failed: %s", e)
@@ -70,7 +89,7 @@ async def main():
 
     asyncio.create_task(artist_check_task(app))
 
-    print("✅ Bot started. Press Ctrl+C to stop.")
+    print("✅ Bot started with MongoDB + Start Animation.")
     try:
         await idle()
     finally:
@@ -78,3 +97,4 @@ async def main():
 
 if __name__ == "__main__":
     asyncio.run(main())
+    
