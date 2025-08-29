@@ -2,7 +2,11 @@ import os
 import asyncio
 from pyrogram import Client, filters
 from pytgcalls import PyTgCalls, idle
-from pytgcalls.types.input_stream import AudioPiped
+from pytgcalls.types import AudioPiped
+await pytgcalls.join_group_call(
+    chat_id,
+    AudioPiped(file_path)
+)
 from yt_dlp import YoutubeDL
 
 # Env variables
