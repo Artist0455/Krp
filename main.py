@@ -3,7 +3,7 @@ import asyncio
 from flask import Flask
 from pyrogram import Client, filters
 from pytgcalls import PyTgCalls, idle
-from pytgcalls.types import AudioPiped
+from pytgcalls.types import AudioPiped  # no InputMode needed
 from yt_dlp import YoutubeDL
 
 # ------------------ CONFIG ------------------
