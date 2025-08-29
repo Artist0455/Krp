@@ -1,5 +1,5 @@
-py-tgcalls==1.2.2
-yt-dlp
 pyrogram==2.0.106
 tgcrypto
+yt-dlp
 flask
+git+https://github.com/pytgcalls/pytgcalls@v2.2.6
